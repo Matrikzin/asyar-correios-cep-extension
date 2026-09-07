@@ -1,0 +1,23 @@
+{
+  "name": "correios-cep",
+  "version": "1.0.0",
+  "description": "Busca rápida de CEP, endereços brasileiros e rastreamento de encomendas.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "asyar-sdk": "workspace:*",
+    "typescript": "^5.6.2",
+    "vite": "^6.4.3",
+    "vitest": "^4.1.10"
+  }
+}

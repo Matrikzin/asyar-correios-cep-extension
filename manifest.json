@@ -1,0 +1,42 @@
+{
+  "id": "com.matrikzin.correios-cep",
+  "name": "Correios & CEP",
+  "version": "1.0.0",
+  "description": "Busca rápida de CEP, endereços brasileiros e rastreamento de encomendas.",
+  "author": "Matrikzin",
+  "searchable": false,
+  "icon": "📮",
+  "type": "extension",
+  "asyarSdk": "^4.10.0",
+  "permissions": [
+    "network",
+    "clipboard:write",
+    "storage:read",
+    "storage:write"
+  ],
+  "preferences": [
+    {
+      "name": "autoCopy",
+      "type": "checkbox",
+      "title": "Copiar automaticamente",
+      "description": "Copia o endereço completo para a área de transferência ao encontrar o CEP.",
+      "default": false
+    }
+  ],
+  "commands": [
+    {
+      "id": "search-cep",
+      "name": "Buscar CEP",
+      "description": "Consulte endereços a partir de um CEP ou logradouro",
+      "mode": "view",
+      "component": "DefaultView"
+    },
+    {
+      "id": "track-package",
+      "name": "Rastrear Encomenda",
+      "description": "Acompanhe o status e histórico de pacotes dos Correios",
+      "mode": "view",
+      "component": "DefaultView"
+    }
+  ]
+}
