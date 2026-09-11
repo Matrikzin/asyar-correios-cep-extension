@@ -11,7 +11,8 @@
   }
   let { context, logger, initialTab = 'cep' }: Props = $props();
 
-  let activeTab = $state<'cep' | 'tracking'>('cep');
+  // svelte-ignore state_referenced_locally
+  let activeTab = $state<'cep' | 'tracking'>(initialTab);
 
   $effect(() => {
     if (initialTab) {

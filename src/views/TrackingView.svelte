@@ -7,7 +7,7 @@
   } from '../services/trackingService';
   import type { INetworkService } from '../services/cepService';
   import type { ExtensionContext } from 'asyar-sdk/view';
-  import type { IFeedbackService, IStorageService } from 'asyar-sdk/contracts';
+  import type { IClipboardService, IFeedbackService, IStorageService } from 'asyar-sdk/contracts';
 
   interface Props {
     context: ExtensionContext;
@@ -17,6 +17,10 @@
   const feedback = $derived(context.getService<IFeedbackService>('feedback'));
   const storage = $derived(context.getService<IStorageService>('storage'));
   const network = $derived(context.getService<INetworkService>('network'));
+  const clipboard = $derived(context.getService<IClipboardService>('clipboard'));
+
+  const linketrackUser = $derived(context.preferences?.values?.linketrackUser as string | undefined);
+  const linketrackToken = $derived(context.preferences?.values?.linketrackToken as string | undefined);
 
   let codeInput = $state('');
   let titleInput = $state('');
@@ -49,7 +53,10 @@
     loading = true;
     errorMsg = null;
     try {
-      const res = await fetchTrackingStatus(clean, network);
+      const res = await fetchTrackingStatus(clean, network, {
+        user: linketrackUser,
+        token: linketrackToken,
+      });
       if (titleInput.trim()) {
         res.title = titleInput.trim();
       }
@@ -107,7 +114,11 @@
 
   async function copyTrackingCode(code: string) {
     try {
-      await navigator.clipboard.writeText(code);
+      if (clipboard && typeof clipboard.writeText === 'function') {
+        await clipboard.writeText(code);
+      } else {
+        await navigator.clipboard.writeText(code);
+      }
       feedback?.toast?.({ message: `Código ${code} copiado!` });
     } catch {}
   }
@@ -155,8 +166,16 @@
     <div class="error-banner">
       <asyar-icon name="alert-circle" size="18"></asyar-icon>
       <div class="error-text">
-        <strong>Erro ao rastrear</strong>
+        <strong>Aviso de Rastreamento</strong>
         <span>{errorMsg}</span>
+        {#if codeInput.trim() && isValidTrackingCode(codeInput.trim())}
+          <div style="margin-top: 8px;">
+            <button class="btn-external" onclick={() => openOfficial(codeInput.trim())}>
+              <asyar-icon name="external-link" size="12"></asyar-icon>
+              <span>Abrir no site oficial dos Correios</span>
+            </button>
+          </div>
+        {/if}
       </div>
     </div>
   {/if}

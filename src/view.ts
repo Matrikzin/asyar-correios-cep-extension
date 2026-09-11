@@ -36,13 +36,38 @@ const impl = new CorreiosExtension();
 extensionBridge.registerManifest(manifest as never);
 extensionBridge.registerExtensionImplementation(extensionId, impl);
 
+// Forward Cmd/Ctrl+K to Asyar launcher to open the action panel
+window.addEventListener('keydown', (event) => {
+  const isModifierCombo = event.metaKey || event.ctrlKey;
+  if (isModifierCombo && event.key.toLowerCase() === 'k') {
+    window.parent.postMessage(
+      {
+        type: 'asyar:extension:keydown',
+        payload: {
+          key: event.key,
+          metaKey: event.metaKey,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+        },
+      },
+      '*',
+    );
+  }
+});
+
 window.parent.postMessage({ type: 'asyar:extension:loaded', extensionId }, '*');
+
+const viewName = new URLSearchParams(window.location.search).get('view');
+const initialTab: 'cep' | 'tracking' =
+  viewName === 'track-package' || viewName === 'TrackingView' ? 'tracking' : 'cep';
 
 const app = mount(App, {
   target: document.getElementById('app')!,
   props: {
     context,
     logger: context.getService<ILogService>('log'),
+    initialTab,
   },
 });
 

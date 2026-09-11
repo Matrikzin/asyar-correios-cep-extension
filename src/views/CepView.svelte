@@ -9,7 +9,7 @@
     type INetworkService,
   } from '../services/cepService';
   import type { ExtensionContext } from 'asyar-sdk/view';
-  import type { IFeedbackService, IStorageService } from 'asyar-sdk/contracts';
+  import type { IClipboardService, IFeedbackService, IStorageService } from 'asyar-sdk/contracts';
 
   interface Props {
     context: ExtensionContext;
@@ -19,6 +19,7 @@
   const feedback = $derived(context.getService<IFeedbackService>('feedback'));
   const storage = $derived(context.getService<IStorageService>('storage'));
   const network = $derived(context.getService<INetworkService>('network'));
+  const clipboard = $derived(context.getService<IClipboardService>('clipboard'));
 
   let cepInput = $state('');
   let loading = $state(false);
@@ -33,7 +34,7 @@
     { label: 'Av. Paulista', cep: '01310-100' },
     { label: 'Praça da Sé', cep: '01001-000' },
     { label: 'Copacabana', cep: '22070-010' },
-    { label: 'Piracicaba', cep: '13401-798' },
+    { label: 'Brasília', cep: '70040-010' },
   ];
 
   // Carregar histórico salvo no storage
@@ -50,19 +51,32 @@
     })();
   });
 
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   function handleInput(e: Event) {
     const target = e.target as HTMLInputElement;
     const clean = cleanCep(target.value);
     cepInput = formatCep(clean);
     errorMsg = null;
 
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+
     if (clean.length === 8) {
-      void searchCep(clean);
+      debounceTimer = setTimeout(() => {
+        void searchCep(clean);
+      }, 200);
     }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
       const clean = cleanCep(cepInput);
       if (clean.length === 8) {
         void searchCep(clean);
@@ -93,7 +107,7 @@
         console.warn('[Correios & CEP] Erro ao salvar histórico recente:', storageErr);
       }
 
-      if (context.preferences?.autoCopy) {
+      if (context.preferences?.values?.autoCopy) {
         await copyAddress(res);
       }
     } catch (err: any) {
@@ -107,7 +121,11 @@
   async function copyAddress(res: CepResult) {
     const text = formatFullAddress(res);
     try {
-      await navigator.clipboard.writeText(text);
+      if (clipboard && typeof clipboard.writeText === 'function') {
+        await clipboard.writeText(text);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
       copiedAddress = true;
       setTimeout(() => (copiedAddress = false), 2000);
       feedback?.toast?.({ message: 'Endereço copiado!' });
@@ -116,7 +134,11 @@
 
   async function copyCepOnly(cep: string) {
     try {
-      await navigator.clipboard.writeText(cep);
+      if (clipboard && typeof clipboard.writeText === 'function') {
+        await clipboard.writeText(cep);
+      } else {
+        await navigator.clipboard.writeText(cep);
+      }
       copiedCep = true;
       setTimeout(() => (copiedCep = false), 2000);
       feedback?.toast?.({ message: `CEP ${cep} copiado!` });
@@ -149,7 +171,7 @@
       <asyar-icon name="search" size="18" class="search-icon"></asyar-icon>
       <input
         type="text"
-        placeholder="Digite o CEP (ex: 01001-000 ou 13401-798)..."
+        placeholder="Digite o CEP (ex: 01001-000 ou 70040-010)..."
         value={cepInput}
         oninput={handleInput}
         onkeydown={handleKeyDown}

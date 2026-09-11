@@ -28,8 +28,14 @@ describe('trackingService', () => {
       await expect(fetchTrackingStatus('invalid')).rejects.toThrow('Código de rastreio inválido');
     });
 
+    it('throws error when credentials are not configured', async () => {
+      await expect(fetchTrackingStatus('NL123456789BR')).rejects.toThrow(
+        'informe seu usuário e token do LinkeTrack',
+      );
+    });
+
     it('returns structured events when tracking API succeeds', async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           eventos: [
@@ -43,19 +49,42 @@ describe('trackingService', () => {
         }),
       });
 
-      const res = await fetchTrackingStatus('NL123456789BR');
+      const res = await fetchTrackingStatus('NL123456789BR', undefined, {
+        user: 'user@example.com',
+        token: 'secret-token',
+      });
       expect(res.code).toBe('NL123456789BR');
       expect(res.lastStatus).toBe('Objeto saiu para entrega ao destinatário');
       expect(res.events?.length).toBe(1);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('user=user%40example.com&token=secret-token'),
+        expect.any(Object),
+      );
     });
 
-    it('falls back gracefully when remote API fails', async () => {
-      global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network offline'));
+    it('propagates actual error when remote API fails instead of fabricating events', async () => {
+      globalThis.fetch = vi.fn().mockRejectedValueOnce(new Error('Network offline'));
 
-      const res = await fetchTrackingStatus('NL123456789BR');
-      expect(res.code).toBe('NL123456789BR');
-      expect(res.lastStatus).toBe('Acompanhe no site oficial dos Correios');
-      expect(res.events?.length).toBe(1);
+      await expect(
+        fetchTrackingStatus('NL123456789BR', undefined, {
+          user: 'user@example.com',
+          token: 'secret-token',
+        }),
+      ).rejects.toThrow('Network offline');
+    });
+
+    it('propagates rate limit error when API returns HTTP 429', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+      });
+
+      await expect(
+        fetchTrackingStatus('NL123456789BR', undefined, {
+          user: 'user@example.com',
+          token: 'secret-token',
+        }),
+      ).rejects.toThrow('Limite de requisições excedido');
     });
   });
 });

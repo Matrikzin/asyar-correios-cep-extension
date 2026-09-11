@@ -51,7 +51,7 @@ describe('cepService', () => {
     });
 
     it('returns formatted result from BrasilAPI when successful', async () => {
-      global.fetch = vi.fn().mockResolvedValueOnce({
+      globalThis.fetch = vi.fn().mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           street: 'Praça da Sé',
@@ -69,7 +69,7 @@ describe('cepService', () => {
     });
 
     it('falls back to ViaCEP when BrasilAPI fails', async () => {
-      global.fetch = vi
+      globalThis.fetch = vi
         .fn()
         .mockRejectedValueOnce(new Error('BrasilAPI down'))
         .mockResolvedValueOnce({

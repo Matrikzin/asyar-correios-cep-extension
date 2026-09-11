@@ -21,6 +21,20 @@
       "title": "Copiar automaticamente",
       "description": "Copia o endereço completo para a área de transferência ao encontrar o CEP.",
       "default": false
+    },
+    {
+      "name": "linketrackUser",
+      "type": "text",
+      "title": "Usuário LinkeTrack (Rastreamento)",
+      "description": "Seu usuário/e-mail cadastrado na API LinkeTrack (linketrack.com).",
+      "placeholder": "ex: seu-email@exemplo.com"
+    },
+    {
+      "name": "linketrackToken",
+      "type": "password",
+      "title": "Token LinkeTrack (Rastreamento)",
+      "description": "Seu token de API pessoal do LinkeTrack.",
+      "placeholder": "Token da API"
     }
   ],
   "commands": [
@@ -28,15 +42,17 @@
       "id": "search-cep",
       "name": "Buscar CEP",
       "description": "Consulte endereços a partir de um CEP ou logradouro",
+      "trigger": "buscar cep endereco consulta logradouro",
       "mode": "view",
-      "component": "DefaultView"
+      "component": "CepView"
     },
     {
       "id": "track-package",
       "name": "Rastrear Encomenda",
       "description": "Acompanhe o status e histórico de pacotes dos Correios",
+      "trigger": "rastrear encomenda correios pacote objeto rastreio",
       "mode": "view",
-      "component": "DefaultView"
+      "component": "TrackingView"
     }
   ]
 }

@@ -15,14 +15,37 @@ Extensão para consulta rápida de endereços por CEP e rastreamento de encomend
 
 Abra o Asyar e execute um dos comandos:
 
-- **Buscar CEP:** Digite `Buscar CEP` ou o próprio número do CEP (ex: `13401-798` ou `01310-100`).
+- **Buscar CEP:** Digite `Buscar CEP` ou o próprio número do CEP (ex: `70040-010` ou `01310-100`).
 - **Rastrear Encomenda:** Digite `Rastrear Encomenda` e insira seu código de rastreio (ex: `AA123456789BR`).
+
+## ⚙️ Configuração de Rastreamento (Preferências)
+
+Para rastrear encomendas diretamente pela interface do launcher:
+1. Obtenha um usuário e token gratuitos em [linketrack.com](https://linketrack.com).
+2. Abra as preferências da extensão no Asyar (**Settings → Extensions → Correios & CEP**).
+3. Preencha os campos **Usuário LinkeTrack** e **Token LinkeTrack**.
+
+*Nota: Se preferir não cadastrar uma chave da API, a extensão permite abrir o código de rastreio diretamente no portal oficial dos Correios com apenas 1 clique.*
+
+## 🌐 Endpoints Externos & Privacidade (Network Egress)
+
+Em conformidade com as diretrizes de privacidade do Asyar, todas as conexões externas realizadas pela extensão são públicas ou autenticadas via credenciais próprias do usuário:
+
+- **BrasilAPI:** `https://brasilapi.com.br/api/cep/v2/` (Consulta pública primária de CEP).
+- **ViaCEP:** `https://viacep.com.br/ws/` (Fallback público secundário de CEP).
+- **OpenCEP:** `https://opencep.com/v1/` (Fallback público terciário de CEP).
+- **LinkeTrack:** `https://api.linketrack.com/track/json` (Consulta de rastreamento acionada apenas quando o usuário configura suas credenciais nas preferências).
+- **Correios Brasil:** `https://rastreamento.correios.com.br` (Abertura direta da página oficial no navegador padrão).
 
 ## 🛡️ Permissões Utilizadas
 
-- `network`: Acesso para consulta de APIs públicas de CEP e rastreamento.
+- `network`: Acesso para consulta de APIs de CEP e rastreamento.
 - `clipboard:write`: Copiar endereços e códigos para a área de transferência.
-- `storage:read` & `storage:write`: Armazenamento local do histórico de buscas recentes.
+- `storage:read` & `storage:write`: Armazenamento local seguro do histórico de buscas recentes.
+
+## 📄 Licença
+
+Este projeto é distribuído sob a licença [MIT](LICENSE).
 
 ---
 Desenvolvido por **Matrikzin** para a comunidade Asyar.

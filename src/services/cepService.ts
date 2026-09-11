@@ -62,7 +62,7 @@ async function requestJson(url: string, network?: INetworkService): Promise<any>
 
   // 2. Fallback para fetch do navegador/webview
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
