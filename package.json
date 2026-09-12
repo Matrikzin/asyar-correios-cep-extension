@@ -1,6 +1,6 @@
 {
   "name": "correios-cep",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Busca rápida de CEP, endereços brasileiros e rastreamento de encomendas.",
   "license": "MIT",
   "type": "module",

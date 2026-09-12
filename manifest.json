@@ -1,7 +1,7 @@
 {
   "id": "com.matrikzin.correios-cep",
   "name": "Correios & CEP",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Busca rápida de CEP, endereços brasileiros e rastreamento de encomendas.",
   "author": "Matrikzin",
   "searchable": false,
@@ -24,7 +24,7 @@
     },
     {
       "name": "linketrackUser",
-      "type": "text",
+      "type": "textfield",
       "title": "Usuário LinkeTrack (Rastreamento)",
       "description": "Seu usuário/e-mail cadastrado na API LinkeTrack (linketrack.com).",
       "placeholder": "ex: seu-email@exemplo.com"
@@ -42,7 +42,7 @@
       "id": "search-cep",
       "name": "Buscar CEP",
       "description": "Consulte endereços a partir de um CEP ou logradouro",
-      "trigger": "buscar cep endereco consulta logradouro",
+      "trigger": "cep",
       "mode": "view",
       "component": "CepView"
     },
@@ -50,7 +50,7 @@
       "id": "track-package",
       "name": "Rastrear Encomenda",
       "description": "Acompanhe o status e histórico de pacotes dos Correios",
-      "trigger": "rastrear encomenda correios pacote objeto rastreio",
+      "trigger": "rastrear",
       "mode": "view",
       "component": "TrackingView"
     }
