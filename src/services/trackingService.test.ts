@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
+  normalizeTrackingCode,
   isValidTrackingCode,
   getCorreiosOfficialUrl,
-  fetchTrackingStatus,
+  savePackage,
+  loadPackages,
 } from './trackingService';
 
 describe('trackingService', () => {
@@ -14,77 +16,88 @@ describe('trackingService', () => {
     expect(isValidTrackingCode('NL1234567890BR')).toBe(false);
   });
 
+  it('accepts codes pasted with spaces', () => {
+    expect(normalizeTrackingCode(' nl 123456789 br ')).toBe('NL123456789BR');
+    expect(isValidTrackingCode('NL 123 456 789 BR')).toBe(true);
+  });
+
   it('getCorreiosOfficialUrl generates correct link', () => {
-    const url = getCorreiosOfficialUrl('NL123456789BR');
+    const url = getCorreiosOfficialUrl('nl123456789br');
     expect(url).toBe('https://rastreamento.correios.com.br/app/index.php?codigo=NL123456789BR');
   });
 
-  describe('fetchTrackingStatus', () => {
-    beforeEach(() => {
-      vi.restoreAllMocks();
+  describe('savePackage', () => {
+    it('adds a new package at the top with its nickname', () => {
+      const list = savePackage([{ code: 'AA111111111BR', title: 'Livro' }], 'nl123456789br', 'Tênis');
+
+      expect(list).toEqual([
+        { code: 'NL123456789BR', title: 'Tênis' },
+        { code: 'AA111111111BR', title: 'Livro' },
+      ]);
     });
 
-    it('throws error for invalid tracking code', async () => {
-      await expect(fetchTrackingStatus('invalid')).rejects.toThrow('Código de rastreio inválido');
+    it('falls back to the code when no nickname is given', () => {
+      expect(savePackage([], 'NL123456789BR')).toEqual([
+        { code: 'NL123456789BR', title: 'NL123456789BR' },
+      ]);
     });
 
-    it('throws error when credentials are not configured', async () => {
-      await expect(fetchTrackingStatus('NL123456789BR')).rejects.toThrow(
-        'informe seu usuário e token do LinkeTrack',
-      );
+    it('keeps the existing nickname when the same code is saved again without one', () => {
+      const saved = [
+        { code: 'AA111111111BR', title: 'Livro' },
+        { code: 'NL123456789BR', title: 'Tênis Nike' },
+      ];
+
+      const list = savePackage(saved, 'NL123456789BR', '   ');
+
+      expect(list).toEqual([
+        { code: 'NL123456789BR', title: 'Tênis Nike' },
+        { code: 'AA111111111BR', title: 'Livro' },
+      ]);
     });
 
-    it('returns structured events when tracking API succeeds', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          eventos: [
-            {
-              data: '07/09/2026',
-              hora: '10:00',
-              local: 'São Paulo / SP',
-              status: 'Objeto saiu para entrega ao destinatário',
-            },
-          ],
-        }),
-      });
+    it('replaces the nickname when a new one is given', () => {
+      const list = savePackage([{ code: 'NL123456789BR', title: 'Tênis' }], 'NL123456789BR', 'Presente');
 
-      const res = await fetchTrackingStatus('NL123456789BR', undefined, {
-        user: 'user@example.com',
-        token: 'secret-token',
-      });
-      expect(res.code).toBe('NL123456789BR');
-      expect(res.lastStatus).toBe('Objeto saiu para entrega ao destinatário');
-      expect(res.events?.length).toBe(1);
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('user=user%40example.com&token=secret-token'),
-        expect.any(Object),
-      );
+      expect(list).toEqual([{ code: 'NL123456789BR', title: 'Presente' }]);
+    });
+  });
+
+  describe('loadPackages', () => {
+    it('reads the v1.1.0 format and drops the stale LinkeTrack status', () => {
+      const raw = JSON.stringify([
+        {
+          code: 'NL123456789BR',
+          title: 'Tênis',
+          lastStatus: 'Objeto postado',
+          updatedAt: '07/09/2026',
+          events: [{ date: '07/09/2026', location: 'SP', status: 'Objeto postado' }],
+        },
+      ]);
+
+      expect(loadPackages(raw)).toEqual([{ code: 'NL123456789BR', title: 'Tênis' }]);
     });
 
-    it('propagates actual error when remote API fails instead of fabricating events', async () => {
-      globalThis.fetch = vi.fn().mockRejectedValueOnce(new Error('Network offline'));
+    it('discards invalid and duplicate entries', () => {
+      const raw = JSON.stringify([
+        { code: 'NL123456789BR', title: 'Tênis' },
+        { code: 'nl123456789br', title: 'Duplicado' },
+        { code: 'invalido', title: 'X' },
+        { code: 42 },
+        null,
+        { code: 'AA111111111BR' },
+      ]);
 
-      await expect(
-        fetchTrackingStatus('NL123456789BR', undefined, {
-          user: 'user@example.com',
-          token: 'secret-token',
-        }),
-      ).rejects.toThrow('Network offline');
+      expect(loadPackages(raw)).toEqual([
+        { code: 'NL123456789BR', title: 'Tênis' },
+        { code: 'AA111111111BR', title: 'AA111111111BR' },
+      ]);
     });
 
-    it('propagates rate limit error when API returns HTTP 429', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValueOnce({
-        ok: false,
-        status: 429,
-      });
-
-      await expect(
-        fetchTrackingStatus('NL123456789BR', undefined, {
-          user: 'user@example.com',
-          token: 'secret-token',
-        }),
-      ).rejects.toThrow('Limite de requisições excedido');
+    it('returns an empty list for missing or corrupted data', () => {
+      expect(loadPackages(undefined)).toEqual([]);
+      expect(loadPackages('{não é json')).toEqual([]);
+      expect(loadPackages('{"code":"NL123456789BR"}')).toEqual([]);
     });
   });
 });

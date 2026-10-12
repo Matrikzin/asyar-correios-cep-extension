@@ -1,11 +1,11 @@
 <script lang="ts">
   import {
     isValidTrackingCode,
-    fetchTrackingStatus,
     getCorreiosOfficialUrl,
+    savePackage,
+    loadPackages,
     type TrackingPackage,
   } from '../services/trackingService';
-  import type { INetworkService } from '../services/cepService';
   import type { ExtensionContext } from 'asyar-sdk/view';
   import type { IClipboardService, IFeedbackService, IStorageService } from 'asyar-sdk/contracts';
 
@@ -16,73 +16,51 @@
 
   const feedback = $derived(context.getService<IFeedbackService>('feedback'));
   const storage = $derived(context.getService<IStorageService>('storage'));
-  const network = $derived(context.getService<INetworkService>('network'));
   const clipboard = $derived(context.getService<IClipboardService>('clipboard'));
-
-  const linketrackUser = $derived(context.preferences?.values?.linketrackUser as string | undefined);
-  const linketrackToken = $derived(context.preferences?.values?.linketrackToken as string | undefined);
 
   let codeInput = $state('');
   let titleInput = $state('');
-  let loading = $state(false);
   let errorMsg = $state<string | null>(null);
-  let currentPackage = $state<TrackingPackage | null>(null);
   let savedPackages = $state<TrackingPackage[]>([]);
 
-  // Carregar pacotes salvos
+  // Carregar pacotes salvos (aceita o formato antigo, da v1.1.0)
   $effect(() => {
     void (async () => {
       try {
         if (storage) {
-          const raw = await storage.get('saved_packages');
-          if (raw && typeof raw === 'string') {
-            savedPackages = JSON.parse(raw);
-          }
+          savedPackages = loadPackages(await storage.get('saved_packages'));
         }
       } catch {}
     })();
   });
 
+  async function persist() {
+    try {
+      if (storage) {
+        await storage.set('saved_packages', JSON.stringify(savedPackages));
+      }
+    } catch (storageErr) {
+      console.warn('[Correios & CEP] Erro ao salvar encomendas:', storageErr);
+    }
+  }
+
+  function openOfficial(code: string) {
+    window.open(getCorreiosOfficialUrl(code), '_blank');
+  }
+
   async function handleTrack() {
-    const clean = codeInput.trim().toUpperCase();
-    if (!isValidTrackingCode(clean)) {
+    if (!isValidTrackingCode(codeInput)) {
       errorMsg = 'Código inválido. Formato esperado: 2 letras + 9 números + 2 letras (ex: AA123456789BR).';
       return;
     }
 
-    loading = true;
     errorMsg = null;
-    try {
-      const res = await fetchTrackingStatus(clean, network, {
-        user: linketrackUser,
-        token: linketrackToken,
-      });
-      if (titleInput.trim()) {
-        res.title = titleInput.trim();
-      }
-      currentPackage = res;
-
-      // Atualizar ou adicionar nos salvos
-      const idx = savedPackages.findIndex((p) => p.code === res.code);
-      if (idx >= 0) {
-        savedPackages[idx] = res;
-      } else {
-        savedPackages = [res, ...savedPackages];
-      }
-      try {
-        if (storage) {
-          await storage.set('saved_packages', JSON.stringify(savedPackages));
-        }
-      } catch (storageErr) {
-        console.warn('[Correios & CEP] Erro ao salvar encomenda recente:', storageErr);
-      }
-      codeInput = '';
-      titleInput = '';
-    } catch (err: any) {
-      errorMsg = err.message || 'Erro ao consultar encomenda.';
-    } finally {
-      loading = false;
-    }
+    savedPackages = savePackage(savedPackages, codeInput, titleInput);
+    // Abrir antes de salvar: o navegador só permite abrir janelas logo após o clique
+    openOfficial(savedPackages[0].code);
+    codeInput = '';
+    titleInput = '';
+    await persist();
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -94,25 +72,12 @@
   async function removePackage(code: string, e: MouseEvent) {
     e.stopPropagation();
     savedPackages = savedPackages.filter((p) => p.code !== code);
-    if (currentPackage?.code === code) {
-      currentPackage = null;
-    }
-    if (storage) {
-      await storage.set('saved_packages', JSON.stringify(savedPackages));
-    }
+    await persist();
     feedback?.toast?.({ message: 'Pacote removido da lista.' });
   }
 
-  function selectPackage(pkg: TrackingPackage) {
-    currentPackage = pkg;
-    errorMsg = null;
-  }
-
-  function openOfficial(code: string) {
-    window.open(getCorreiosOfficialUrl(code), '_blank');
-  }
-
-  async function copyTrackingCode(code: string) {
+  async function copyTrackingCode(code: string, e: MouseEvent) {
+    e.stopPropagation();
     try {
       if (clipboard && typeof clipboard.writeText === 'function') {
         await clipboard.writeText(code);
@@ -120,7 +85,9 @@
         await navigator.clipboard.writeText(code);
       }
       feedback?.toast?.({ message: `Código ${code} copiado!` });
-    } catch {}
+    } catch {
+      feedback?.toast?.({ message: 'Não foi possível copiar o código.' });
+    }
   }
 </script>
 
@@ -136,7 +103,7 @@
           placeholder="Código de Rastreio (ex: NL123456789BR)"
           bind:value={codeInput}
           onkeydown={handleKeyDown}
-          maxlength="13"
+          maxlength="20"
         />
       </div>
 
@@ -150,15 +117,15 @@
         />
       </div>
 
-      <button class="btn-track" onclick={handleTrack} disabled={loading || !codeInput.trim()}>
-        {#if loading}
-          <span class="spinner"></span>
-        {:else}
-          <asyar-icon name="search" size="14"></asyar-icon>
-          <span>Rastrear</span>
-        {/if}
+      <button class="btn-track" onclick={handleTrack} disabled={!codeInput.trim()}>
+        <asyar-icon name="external-link" size="14"></asyar-icon>
+        <span>Rastrear</span>
       </button>
     </div>
+    <p class="hint">
+      O rastreio abre no site oficial dos Correios. A encomenda fica salva aqui para você consultar de novo
+      com um clique.
+    </p>
   </div>
 
   <!-- Error Banner -->
@@ -168,55 +135,6 @@
       <div class="error-text">
         <strong>Aviso de Rastreamento</strong>
         <span>{errorMsg}</span>
-        {#if codeInput.trim() && isValidTrackingCode(codeInput.trim())}
-          <div style="margin-top: 8px;">
-            <button class="btn-external" onclick={() => openOfficial(codeInput.trim())}>
-              <asyar-icon name="external-link" size="12"></asyar-icon>
-              <span>Abrir no site oficial dos Correios</span>
-            </button>
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Package Details Card -->
-  {#if currentPackage}
-    <div class="package-card">
-      <div class="package-header">
-        <div>
-          <h2 class="package-title">{currentPackage.title}</h2>
-          <button class="package-code-btn" onclick={() => copyTrackingCode(currentPackage!.code)} title="Clique para copiar">
-            <span>{currentPackage.code}</span>
-            <asyar-icon name="copy" size="12"></asyar-icon>
-          </button>
-        </div>
-        <button class="btn-external" onclick={() => openOfficial(currentPackage!.code)}>
-          <asyar-icon name="external-link" size="14"></asyar-icon>
-          <span>Abrir no site oficial</span>
-        </button>
-      </div>
-
-      <div class="events-timeline">
-        {#if currentPackage.events && currentPackage.events.length > 0}
-          {#each currentPackage.events as ev, i}
-            <div class="timeline-step {i === 0 ? 'active' : ''}">
-              <div class="timeline-dot"></div>
-              <div class="timeline-content">
-                <div class="timeline-meta">
-                  <span class="event-date">{ev.date}</span>
-                  <span class="event-loc">{ev.location}</span>
-                </div>
-                <div class="event-status">{ev.status}</div>
-                {#if ev.subStatus}
-                  <div class="event-sub">{ev.subStatus}</div>
-                {/if}
-              </div>
-            </div>
-          {/each}
-        {:else}
-          <p class="no-events">Nenhum evento registrado ainda.</p>
-        {/if}
       </div>
     </div>
   {/if}
@@ -229,23 +147,28 @@
       </div>
 
       <div class="packages-list">
-        {#each savedPackages as item}
+        {#each savedPackages as item (item.code)}
           <div
-            class="package-item {currentPackage?.code === item.code ? 'selected' : ''}"
+            class="package-item"
             role="button"
             tabindex="0"
-            onclick={() => selectPackage(item)}
-            onkeydown={(e) => { if (e.key === 'Enter') selectPackage(item); }}
+            title="Abrir no site oficial dos Correios"
+            onclick={() => openOfficial(item.code)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') openOfficial(item.code);
+            }}
           >
             <div class="package-item-main">
               <div class="pkg-info">
                 <span class="pkg-title">{item.title}</span>
                 <span class="pkg-code">{item.code}</span>
               </div>
-              <span class="pkg-status">{item.lastStatus || 'Registrado'}</span>
             </div>
+            <button class="btn-icon" onclick={(e) => copyTrackingCode(item.code, e)} title="Copiar código">
+              <asyar-icon name="copy" size="14"></asyar-icon>
+            </button>
             <button
-              class="btn-delete"
+              class="btn-icon btn-delete"
               onclick={(e) => removePackage(item.code, e)}
               title="Remover pacote"
             >
@@ -348,19 +271,10 @@
     cursor: not-allowed;
   }
 
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    border-top-color: #ffffff;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+  .hint {
+    margin-top: 8px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
   }
 
   .error-banner {
@@ -384,147 +298,6 @@
   .error-text strong {
     font-size: 14px;
     font-weight: 600;
-  }
-
-  .package-card {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  }
-
-  .package-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 10px;
-  }
-
-  .package-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: #ffffff;
-    margin: 0 0 6px 0;
-  }
-
-  .package-code-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(56, 189, 248, 0.12);
-    border: 1px solid rgba(56, 189, 248, 0.3);
-    color: #38bdf8;
-    padding: 3px 8px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: monospace;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .package-code-btn:hover {
-    background: rgba(56, 189, 248, 0.2);
-  }
-
-  .btn-external {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.85);
-    padding: 7px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.15s ease;
-  }
-
-  .btn-external:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
-  }
-
-  .events-timeline {
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    padding-left: 6px;
-  }
-
-  .timeline-step {
-    position: relative;
-    display: flex;
-    gap: 14px;
-    padding-bottom: 18px;
-  }
-
-  .timeline-step:last-child {
-    padding-bottom: 0;
-  }
-
-  .timeline-step::before {
-    content: '';
-    position: absolute;
-    left: 4px;
-    top: 14px;
-    bottom: 0;
-    width: 2px;
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .timeline-step:last-child::before {
-    display: none;
-  }
-
-  .timeline-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.25);
-    margin-top: 4px;
-    flex-shrink: 0;
-  }
-
-  .timeline-step.active .timeline-dot {
-    background: #38bdf8;
-    box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
-  }
-
-  .timeline-content {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .timeline-meta {
-    display: flex;
-    gap: 8px;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.45);
-  }
-
-  .event-status {
-    font-size: 14px;
-    font-weight: 600;
-    color: #ffffff;
-  }
-
-  .event-sub {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .no-events {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.45);
   }
 
   .saved-section {
@@ -565,11 +338,6 @@
     background: rgba(255, 255, 255, 0.06);
   }
 
-  .package-item.selected {
-    border-color: #0070f3;
-    background: rgba(0, 112, 243, 0.1);
-  }
-
   .package-item-main {
     flex: 1;
     display: flex;
@@ -596,18 +364,18 @@
     font-family: monospace;
   }
 
-  .pkg-status {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
-  }
-
-  .btn-delete {
+  .btn-icon {
     background: none;
     border: none;
     color: rgba(255, 255, 255, 0.35);
     padding: 10px 14px;
     cursor: pointer;
     transition: all 0.15s ease;
+  }
+
+  .btn-icon:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .btn-delete:hover {

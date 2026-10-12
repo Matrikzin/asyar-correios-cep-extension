@@ -1,124 +1,60 @@
-import type { INetworkService } from './cepService';
-
-export interface TrackingEvent {
-  date: string;
-  location: string;
-  status: string;
-  subStatus?: string;
-}
-
 export interface TrackingPackage {
   code: string;
   title: string;
-  lastStatus?: string;
-  updatedAt?: string;
-  events?: TrackingEvent[];
 }
 
-export interface TrackingCredentials {
-  user?: string;
-  token?: string;
+/** Remove espaços e coloca em maiúsculas: " nl 123456789 br " → "NL123456789BR". */
+export function normalizeTrackingCode(code: string): string {
+  return (code || '').replace(/\s+/g, '').toUpperCase();
 }
 
 export function isValidTrackingCode(code: string): boolean {
-  const clean = code.trim().toUpperCase();
-  return /^[A-Z]{2}[0-9]{9}[A-Z]{2}$/.test(clean);
+  return /^[A-Z]{2}[0-9]{9}[A-Z]{2}$/.test(normalizeTrackingCode(code));
 }
 
 export function getCorreiosOfficialUrl(code: string): string {
-  const clean = code.trim().toUpperCase();
-  return `https://rastreamento.correios.com.br/app/index.php?codigo=${encodeURIComponent(clean)}`;
+  return `https://rastreamento.correios.com.br/app/index.php?codigo=${encodeURIComponent(normalizeTrackingCode(code))}`;
 }
 
-export async function fetchTrackingStatus(
+/**
+ * Adiciona a encomenda (ou a move para o topo, se já existir).
+ *
+ * Sem apelido novo, mantém o que já estava salvo — salvar de novo o mesmo
+ * código não pode apagar o "Tênis Nike" que o usuário escolheu antes.
+ */
+export function savePackage(
+  list: TrackingPackage[],
   code: string,
-  network?: INetworkService,
-  credentials?: TrackingCredentials,
-): Promise<TrackingPackage> {
-  const clean = code.trim().toUpperCase();
-  if (!isValidTrackingCode(clean)) {
-    throw new Error('Código de rastreio inválido. Exemplo correto: AA123456789BR');
-  }
+  title?: string,
+): TrackingPackage[] {
+  const clean = normalizeTrackingCode(code);
+  const existing = list.find((p) => p.code === clean);
+  const finalTitle = title?.trim() || existing?.title || clean;
+  return [{ code: clean, title: finalTitle }, ...list.filter((p) => p.code !== clean)];
+}
 
-  const user = credentials?.user?.trim();
-  const token = credentials?.token?.trim();
-
-  if (!user || !token) {
-    throw new Error(
-      'Para rastrear encomendas no Asyar, informe seu usuário e token do LinkeTrack nas preferências da extensão (linketrack.com) ou consulte no site oficial dos Correios.',
-    );
-  }
-
-  const url = `https://api.linketrack.com/track/json?user=${encodeURIComponent(user)}&token=${encodeURIComponent(token)}&codigo=${clean}`;
-
-  let data: any = null;
-  let lastError: Error | null = null;
-
-  // 1. Tentar através do serviço de rede nativo do Asyar
-  if (network && typeof network.fetch === 'function') {
+/**
+ * Lê a lista salva no storage, tolerando o formato antigo (até a v1.1.0
+ * cada item também guardava status e eventos vindos do LinkeTrack). Só código
+ * e apelido sobrevivem; itens inválidos são descartados.
+ */
+export function loadPackages(raw: unknown): TrackingPackage[] {
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
     try {
-      const res = await network.fetch(url, { timeout: 15000 });
-      if (res) {
-        if (!res.ok) {
-          if (res.status === 429) {
-            throw new Error('Limite de requisições excedido na API LinkeTrack. Aguarde alguns instantes.');
-          }
-          if (res.status === 401 || res.status === 403) {
-            throw new Error('Usuário ou token do LinkeTrack inválidos. Verifique nas preferências da extensão.');
-          }
-          if (res.status === 404) {
-            throw new Error('Encomenda não encontrada ou código ainda não registrado no sistema dos Correios.');
-          }
-          throw new Error(`Erro na consulta de rastreamento (HTTP ${res.status}).`);
-        }
-        if (res.body) {
-          data = typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
-        }
-      }
-    } catch (err: any) {
-      lastError = err;
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
     }
   }
+  if (!Array.isArray(parsed)) return [];
 
-  // 2. Fallback para fetch do navegador/webview com timeout
-  if (!data) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      if (!res.ok) {
-        if (res.status === 429) {
-          throw new Error('Limite de requisições excedido na API LinkeTrack. Aguarde alguns instantes.');
-        }
-        if (res.status === 401 || res.status === 403) {
-          throw new Error('Usuário ou token do LinkeTrack inválidos. Verifique nas preferências da extensão.');
-        }
-        if (res.status === 404) {
-          throw new Error('Encomenda não encontrada ou código ainda não registrado no sistema dos Correios.');
-        }
-        throw new Error(`Erro na consulta de rastreamento (HTTP ${res.status}).`);
-      }
-      data = await res.json();
-    } catch (err: any) {
-      throw lastError || err;
-    }
+  const result: TrackingPackage[] = [];
+  for (const item of parsed) {
+    const code = normalizeTrackingCode(String(item?.code ?? ''));
+    if (!isValidTrackingCode(code) || result.some((p) => p.code === code)) continue;
+    const title = typeof item?.title === 'string' && item.title.trim() ? item.title.trim() : code;
+    result.push({ code, title });
   }
-
-  if (data && (data.eventos || data.codigo)) {
-    const eventos: TrackingEvent[] = (data.eventos || []).map((e: any) => ({
-      date: e.data && e.hora ? `${e.data} ${e.hora}` : e.data || '',
-      location: e.local || 'Local não informado',
-      status: e.status || '',
-      subStatus: Array.isArray(e.subStatus) ? e.subStatus.join(' - ') : e.subStatus || undefined,
-    }));
-
-    const latest = eventos[0];
-    return {
-      code: clean,
-      title: clean,
-      lastStatus: latest ? latest.status : 'Aguardando atualização',
-      updatedAt: latest ? latest.date : new Date().toLocaleString('pt-BR'),
-      events: eventos,
-    };
-  }
-
-  throw new Error('Encomenda não encontrada ou serviço indisponível.');
+  return result;
 }
